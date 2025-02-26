@@ -3,8 +3,11 @@ from pymongo import MongoClient
 import joblib
 import os
 from flask_cors import CORS
-from config import MONGO_URI, DB_NAME, COLLECTION_NAME
+from config import MONGO_URI, DB_NAME, COLLECTION_Review, COLLECTION_user,COLLECTION_complaint,COLLECTION_leaveForm
 from utils import get_analytics_data, get_negative_reviews
+from authlib.integrations.flask_client import OAuth
+from flask import Flask, redirect, url_for, session, render_template
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -12,7 +15,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Connect to MongoDB
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
+collection = db[COLLECTION_Review]
 
 # Load sentiment model and vectorizer
 model = joblib.load(os.path.join("model", "sentiment_model.pkl"))
@@ -58,71 +61,11 @@ def get_food_negative_reviews(food_item):
 from agent import agent_bp
 app.register_blueprint(agent_bp)
 
-if __name__ == '__main__':
-    app.run(debug=True)
-from flask import Flask, request, jsonify
-from pymongo import MongoClient
-import joblib
-import os
-from flask_cors import CORS
-from config import MONGO_URI, DB_NAME, COLLECTION_NAME
-from utils import get_analytics_data, get_negative_reviews
-
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Connect to MongoDB
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
-
 # Load sentiment model and vectorizer
 model = joblib.load(os.path.join("model", "sentiment_model.pkl"))
 vectorizer = joblib.load(os.path.join("model", "vectorizer.pkl"))
 
-@app.route('/reviews', methods=['POST'])
-def add_review():
-    data = request.get_json()
-    print(f"Received data for review: {data}")  # Debugging
-
-    food = data.get('food')
-    review_text = data.get('review')
-
-    if not food or not review_text:
-        print("Error: Missing food or review")  # Debugging
-        return jsonify({"error": "food and review are required"}), 400
-
-    try:
-        # Predict sentiment
-        X_tfidf = vectorizer.transform([review_text])
-        sentiment_score = model.predict(X_tfidf)  # 0 or 1
-
-        # Store in MongoDB
-        doc = {
-            "food": food,
-            "review": review_text,
-            "sentiment_score": int(sentiment_score)
-        }
-        collection.insert_one(doc)
-        print("Review added successfully")  # Debugging
-
-        return jsonify({"message": "Review added successfully"}), 201
-    except Exception as e:
-        print(f"Error in /reviews endpoint: {e}")  # Debugging
-        return jsonify({"error": "Internal server error"}), 500
-
-@app.route('/analytics', methods=['GET'])
-def get_analytics():
-    data = get_analytics_data(collection)
-    return jsonify(data), 200
-
-@app.route('/analytics/<food_item>', methods=['GET'])
-def get_food_negative_reviews(food_item):
-    negative_reviews = get_negative_reviews(collection, food_item)
-    return jsonify({
-        "food": food_item,
-        "negative_reviews": negative_reviews
-    }), 200
+collection_leaveForm = db[COLLECTION_leaveForm]
 
 @app.route('/leave', methods=['POST'])
 def submit_leave_request():
@@ -142,9 +85,11 @@ def submit_leave_request():
         "reason": reason,
         "date": date
     }
-    collection.insert_one(leave_request)
+    collection_leaveForm.insert_one(leave_request)
 
     return jsonify({"message": "Leave request submitted successfully"}), 201
+
+collection_complaint= db[COLLECTION_complaint]
 
 @app.route('/complaint', methods=['POST'])
 def submit_complaint():
@@ -164,13 +109,120 @@ def submit_complaint():
         "subject": subject,
         "description": description
     }
-    collection.insert_one(complaint)
+    collection_complaint.insert_one(complaint)
 
     return jsonify({"message": "Complaint submitted successfully"}), 201
 
-# Import and register the agent blueprint
-from agent import agent_bp
-app.register_blueprint(agent_bp)
+
+collection_user = db[COLLECTION_user]
+
+# Load configuration from config.py
+app.config.from_object("config") 
+
+# Flask Login Configuration
+app.secret_key = os.urandom(24)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+
+# OAuth Setup (Google)
+oauth = OAuth(app)
+google = oauth.register(
+    name="google",
+    client_id=app.config["GOOGLE_CLIENT_ID"],  # Use string keys
+    client_secret=app.config["GOOGLE_CLIENT_SECRET"],
+    authorize_url="https://accounts.google.com/o/oauth2/auth",
+    authorize_params={"scope": "email profile"},
+    access_token_url="https://oauth2.googleapis.com/token",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+# User Model
+class User(UserMixin):
+    def __init__(self, email):
+        self.id = email
+
+@login_manager.user_loader
+def load_user(email):
+    return User(email)
+
+# Routes
+@app.route("/")
+@login_required
+def home():
+    return redirect("http://localhost:5173/") 
+
+@app.route("/login/google",methods=["GET"])
+def login():
+    print("login started")
+    return google.authorize_redirect(url_for("authorize", _external=True))
+
+from datetime import timedelta
+
+# Set session timeout in app configuration
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+
+@app.route("/authorize/google")
+def authorize():
+    token = google.authorize_access_token()
+
+    # Retrieve the nonce from session
+    nonce = session.pop("nonce", None)  
+
+    # Pass the nonce while parsing the ID token
+    user_info = google.parse_id_token(token, nonce=nonce)  
+
+    email = user_info.get("email")
+    if not email:
+        return "Error: Could not retrieve email from Google.", 400
+
+    user_exists = collection_user.find_one({"email": email})
+
+    if user_exists:
+        user = User(email)
+        login_user(user)
+
+        # Make session permanent and set expiry
+        session.permanent = True  # Ensures session does not expire on browser close
+        session["email"] = email  
+
+        return redirect(url_for("home"))
+    else:
+        return "Unauthorized: Your email is not registered.", 403
+
+# New Route to Get Logged-in User's Name
+@app.route("/user", methods=["GET"])
+@login_required
+def get_user():
+    if "name" in session:
+        return {"name": session["name"], "email": session["email"]}, 200
+    else:
+        return {"error": "User not logged in"}, 401
+
+#Get user's role of Logged-in User's Name    
+@app.route("/user/role", methods=["GET"])
+@login_required
+def get_user_role():
+    email = session.get("email")  # Get logged-in user's email from session
+
+    if not email:
+        return {"error": "User not logged in"}, 401
+
+    # Fetch only the role from MongoDB
+    user = collection_user.find_one({"email": email}, {"_id": 0, "role": 1})
+
+    if user and "role" in user:
+        return {"role": user["role"]}, 200
+    else:
+        return {"error": "Role not found"}, 404
+    
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    session.clear()
+    return redirect(url_for("login"))
 
 if __name__ == '__main__':
     app.run(debug=True)

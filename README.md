@@ -56,7 +56,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # Install dependencies
-pip install -r requirements.txt
+pip install flask flask-cors pymongo joblib scikit-learn pandas pydantic google-generativeai
 
 # Train the ML model (ensure you have f.csv in the backend directory)
 python train_model.py

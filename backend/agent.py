@@ -10,12 +10,12 @@ from flask_cors import CORS
 import requests
 
 # Import MongoDB configuration from config.py
-from config import MONGO_URI, DB_NAME, COLLECTION_NAME, GEMINI_API_KEY
+from config import MONGO_URI, DB_NAME, COLLECTION_Review, GEMINI_API_KEY
 
 # Setup MongoDB connection
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
+collection = db[COLLECTION_Review]
 
 # Remove the environment variable check and use the config directly
 if not GEMINI_API_KEY:
