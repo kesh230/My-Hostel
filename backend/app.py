@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify ,session, make_response ,send_from_directory
 from pymongo import MongoClient
 import joblib
 import os
@@ -7,10 +7,25 @@ from config import MONGO_URI, DB_NAME, COLLECTION_Review, COLLECTION_user,COLLEC
 from utils import get_analytics_data, get_negative_reviews
 from authlib.integrations.flask_client import OAuth
 from flask import Flask, redirect, url_for, session, render_template
+from flask_session import Session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required
 
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+app = Flask(__name__,static_folder="../frontend/dist",static_url_path="/")
+
+@app.route("/")
+def home():
+    return send_from_directory(app.static_folder,"index.html")
+
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:5173"}})
+# Ensure session directory exists
+session_dir = "./flask_session"
+if not os.path.exists(session_dir):
+    os.makedirs(session_dir)
+
+# Flask-Session Configuration
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_PERMANENT"] = True
+app.config["SESSION_FILE_DIR"] = session_dir    # Initialize Flask-Session
 
 # Connect to MongoDB
 client = MongoClient(MONGO_URI)
@@ -147,11 +162,11 @@ class User(UserMixin):
 def load_user(email):
     return User(email)
 
-# Routes
-@app.route("/")
-@login_required
-def home():
-    return redirect("http://localhost:5173/") 
+# # Routes
+# @app.route("/")
+# @login_required
+# def home():
+#     return redirect("http://localhost:5173/") 
 
 @app.route("/login/google",methods=["GET"])
 def login():
@@ -191,6 +206,12 @@ def authorize():
     else:
         return "Unauthorized: Your email is not registered.", 403
 
+@app.route("/user/status", methods=["GET"])
+def check_user_status():
+    if "email" in session:
+        return {"authenticated": True, "email": session["email"]}, 200
+    return {"authenticated": False}, 401
+
 # New Route to Get Logged-in User's Name
 @app.route("/user", methods=["GET"])
 @login_required
@@ -217,12 +238,16 @@ def get_user_role():
     else:
         return {"error": "Role not found"}, 404
     
-@app.route("/logout")
+@app.route('/logout')
 @login_required
 def logout():
-    logout_user()
-    session.clear()
-    return redirect(url_for("login"))
+    logout_user()  # Flask-Login logout
+    session.clear()  # Clear session data
+    
+    response = jsonify({"message": "Logged out successfully"})  # Send JSON response
+    response.set_cookie("session", "", expires=0)  # Remove session cookie
+    
+    return response, 200 
 
 if __name__ == '__main__':
     app.run(debug=True)

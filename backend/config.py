@@ -1,5 +1,5 @@
 # MongoDB Configuration
-MONGO_URI = "mongodb://localhost:27017"  # Replace with your URI
+MONGO_URI = "mongodb+srv://yashchaurasiya448:tQWFaJOfj0wAtPpW@cluster0.dmg3v.mongodb.net/"  # Replace with your URI
 DB_NAME = "hosteldb"
 COLLECTION_Review = "reviews"
 COLLECTION_complaint="complaint"

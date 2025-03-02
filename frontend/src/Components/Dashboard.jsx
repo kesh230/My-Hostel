@@ -1,17 +1,21 @@
+import { defaults } from 'chart.js/auto';
 import React, { useEffect, useState } from 'react';
-import { Chart as ChartJS, defaults } from 'chart.js/auto';
 import { Line } from 'react-chartjs-2';
-import { Link, useNavigate } from 'react-router-dom';
-import { FiUser, FiMessageSquare, FiAlertCircle } from 'react-icons/fi';
+import { FiAlertCircle, FiMessageSquare, FiUser } from 'react-icons/fi';
 import { IoTimeOutline } from 'react-icons/io5';
 import { MdOutlineFoodBank, MdOutlineRateReview } from 'react-icons/md';
-import WeekFeedback from './lib/const/WeekFeedback.json';
+import { useNavigate } from 'react-router-dom';
 import TodayMenu from './lib/const/TodayMenu.json';
+import WeekFeedback from './lib/const/WeekFeedback.json';
+import { useAuth } from "../AuthContext";
+
 
 defaults.maintainAspectRatio = false;
 defaults.responsive = true;
 
+
 function Dashboard() {
+  const { logout } = useAuth();
   const [name, setName] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedMeal, setSelectedMeal] = useState('');
@@ -41,37 +45,6 @@ function Dashboard() {
     }
   }, [currentTime]);
 
-  useEffect(() => {
-    // Fetch name from backend API using token
-    const fetchName = async () => {
-      const token = localStorage.getItem('token'); // Retrieve token from local storage
-
-      if (!token) {
-        console.error('Auth token is missing');
-        return;
-      }
-
-      try {
-        const response = await fetch('http://localhost:8080/api/v1/users/getUser', {
-          headers: {
-            'Authorization': `Bearer ${token}`, // Include token in Authorization header
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log(data)
-        setName(data.username);
-      } catch (error) {
-        console.error('Error fetching name:', error);
-      }
-    };
-
-    fetchName();
-  }, []);
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -158,6 +131,7 @@ function Dashboard() {
               >
                 View Profile
               </button>
+              <button className="logout-button" onClick={logout}>Logout</button>
             </div>
           </div>
         </div>

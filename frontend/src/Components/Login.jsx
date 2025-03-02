@@ -1,11 +1,9 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from "react";
 
 const Login = () => {
-  const navigate = useNavigate();
-
   const handleOAuthLogin = () => {
-    window.location.href = 'http://127.0.0.1:5000/login/google'; // Adjust API URL as needed
+    // Directly change window location to the OAuth endpoint
+    window.location.href = "http://127.0.0.1:5000/login/google";
   };
 
   return (
